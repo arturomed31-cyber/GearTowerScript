@@ -1,0 +1,441 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextChatService = game:GetService("TextChatService")
+local CoreGui = game:GetService("CoreGui")
+
+local Window = Rayfield:CreateWindow({
+   Name = "Gear slap tower Script by ORANGE",
+   LoadingTitle = " ",
+   LoadingSubtitle = " ",
+   IntroEnabled = false,
+   ConfigurationSaving = {
+      Enabled = false
+   }
+})
+
+local Tab = Window:CreateTab("Main", 4483362458)
+
+-- Función auxiliar para escribir comandos en el chat
+local function enviarAlChat(mensaje)
+   if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+      local canales = TextChatService:FindFirstChild("TextChannels")
+      local canalGeneral = canales and canales:FindFirstChild("RBXGeneral")
+      if canalGeneral then
+         canalGeneral:SendAsync(mensaje)
+         return
+      end
+   end
+
+   local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+   local sayMessage = chatEvents and chatEvents:FindFirstChild("SayMessageRequest")
+   if sayMessage then
+      sayMessage:FireServer(mensaje, "All")
+   end
+end
+
+-- ==========================================
+-- SECTION 1: MAIN OPTIONS
+-- ==========================================
+local Section = Tab:CreateSection("Main Options")
+
+local enCooldownMonedas = false
+local ClaimCoinsButton
+
+ClaimCoinsButton = Tab:CreateButton({
+   Name = "Claim All Coins",
+   Callback = function()
+      if enCooldownMonedas then
+         Rayfield:Notify({
+            Title = "Cooldown",
+            Content = "Wait for the timer to finish before claiming again.",
+            Duration = 2,
+            Image = 4483362458,
+         })
+         return
+      end
+
+      enCooldownMonedas = true
+      task.spawn(function()
+         local remote = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("mapManagerRemote")
+         local givers = {"8kCoinsGiver", "2.5kCoinsGiver", "2kCoinsGiver", "1.5kCoinsGiver"}
+
+         for _, giver in ipairs(givers) do
+            remote:FireServer("claimCoins", giver)
+            task.wait(0.5)
+         end
+
+         Rayfield:Notify({
+            Title = "Coins Claimed (+14k)",
+            Content = "All coin givers claimed! Cooldown started.",
+            Duration = 3,
+            Image = 4483362458,
+         })
+
+         -- Contador regresivo en vivo de 90 segundos (1:30 -> 0:00)
+         for segundos = 90, 1, -1 do
+            local mins = math.floor(segundos / 60)
+            local secs = segundos % 60
+            ClaimCoinsButton:Set(string.format("Claim All Coins (%d:%02d)", mins, secs))
+            task.wait(1)
+         end
+
+         ClaimCoinsButton:Set("Claim All Coins")
+         enCooldownMonedas = false
+         Rayfield:Notify({
+            Title = "Coins Ready",
+            Content = "You can claim all coins again!",
+            Duration = 3,
+            Image = 4483362458,
+         })
+      end)
+   end,
+})
+
+local listaGuantes = {
+   "Whirlpool Slap",
+   "Squid Game Slap",
+   "Claw Slap",
+   "Gold Carpet",
+   "Electric Slap",
+   "Clock Slap"
+}
+
+local opcionElectrica = "Electric Slap (If not in group it can't work)"
+
+local Dropdown
+Dropdown = Tab:CreateDropdown({
+   Name = "Get glove/Tool",
+   Options = {
+      "None",
+      "All gloves",
+      "Whirlpool Slap",
+      "Squid Game Slap",
+      "Claw Slap",
+      "Gold Carpet",
+      opcionElectrica,
+      "Clock Slap",
+      "Claim Free Coil"
+   },
+   CurrentOption = {"None"},
+   MultipleOptions = false,
+   Flag = "DropdownGuante",
+   Callback = function(Options)
+      local elegido = type(Options) == "table" and table.concat(Options) or tostring(Options)
+      if elegido == "" or elegido == "None" then return end
+      
+      local remote = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("mapManagerRemote")
+      
+      if elegido == "All gloves" then
+         for _, nombre in ipairs(listaGuantes) do
+            remote:FireServer("claimTool", nombre)
+            task.wait(1.6)
+         end
+         ReplicatedStorage:WaitForChild("Events"):WaitForChild("ClaimFreeCoil"):FireServer()
+      elseif elegido == "Claim Free Coil" then
+         ReplicatedStorage:WaitForChild("Events"):WaitForChild("ClaimFreeCoil"):FireServer()
+         Rayfield:Notify({
+            Title = "Free Coil",
+            Content = "ClaimFreeCoil event fired!",
+            Duration = 2,
+            Image = 4483362458,
+         })
+      elseif elegido == opcionElectrica then
+         remote:FireServer("claimTool", "Electric Slap")
+      else
+         remote:FireServer("claimTool", elegido)
+      end
+
+      task.wait(0.2)
+      Dropdown:Set({"None"})
+   end,
+})
+
+-- ==========================================
+-- SECTION 2: GRIEF SERVER (1 POR SEGUNDO VIA REQUESTCOMMAND)
+-- ==========================================
+local GriefSection = Tab:CreateSection("Grief Server")
+
+local BuyModButton = Tab:CreateButton({
+   Name = "Buy Mod Admin (25k)",
+   Callback = function()
+      local remote = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("mapManagerRemote")
+      remote:FireServer("buyAdmin", "Mod", 25000)
+      Rayfield:Notify({
+         Title = "Admin Shop",
+         Content = "Sent request to buy Mod (25,000 coins).",
+         Duration = 3,
+         Image = 4483362458,
+      })
+   end,
+})
+
+local function obtenerHDCommandRemote()
+   local hdClient = ReplicatedStorage:FindFirstChild("HDAdminClient")
+   local signals = hdClient and hdClient:FindFirstChild("Signals")
+   local req = signals and signals:FindFirstChild("RequestCommand")
+   if req then return req end
+
+   for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+      if obj.Name == "RequestCommand" and (obj:IsA("RemoteFunction") or obj:IsA("RemoteEvent")) then
+         return obj
+      end
+   end
+   return nil
+end
+
+local function ejecutarComandoHD(comando)
+   local reqRemote = obtenerHDCommandRemote()
+   if reqRemote then
+      task.spawn(function()
+         if reqRemote:IsA("RemoteFunction") then
+            reqRemote:InvokeServer(comando)
+         else
+            reqRemote:FireServer(comando)
+         end
+      end)
+      return true
+   else
+      enviarAlChat(comando)
+      return false
+   end
+end
+
+local function crearBotonComandoMasivo(nombreBoton, textoPausa, textoReanudar, construirComando)
+   local activo = false
+   local indice = 1
+   local listaObjetivos = {}
+   local boton
+
+   boton = Tab:CreateButton({
+      Name = nombreBoton,
+      Callback = function()
+         if activo then
+            activo = false
+            boton:Set(string.format("%s (%d/%d)", textoReanudar, indice - 1, #listaObjetivos))
+            Rayfield:Notify({
+               Title = "Paused",
+               Content = "Paused! Click again to resume.",
+               Duration = 2,
+               Image = 4483362458,
+            })
+            return
+         end
+
+         if indice == 1 or indice > #listaObjetivos then
+            listaObjetivos = {}
+            for _, player in ipairs(Players:GetPlayers()) do
+               if player ~= Players.LocalPlayer then
+                  table.insert(listaObjetivos, player)
+               end
+            end
+            indice = 1
+         end
+
+         if #listaObjetivos == 0 then
+            Rayfield:Notify({
+               Title = "Info",
+               Content = "No other players in the server.",
+               Duration = 2,
+               Image = 4483362458,
+            })
+            return
+         end
+
+         activo = true
+         task.spawn(function()
+            while activo and indice <= #listaObjetivos do
+               local target = listaObjetivos[indice]
+               boton:Set(string.format("%s (%d/%d)", textoPausa, indice, #listaObjetivos))
+
+               if target and target.Parent then
+                  ejecutarComandoHD(construirComando(target.Name))
+                  indice = indice + 1
+                  task.wait(1) -- Exactamente 1 jugador por segundo
+               else
+                  indice = indice + 1
+               end
+            end
+
+            if indice > #listaObjetivos then
+               activo = false
+               indice = 1
+               listaObjetivos = {}
+               boton:Set(nombreBoton)
+               Rayfield:Notify({
+                  Title = "Grief Complete",
+                  Content = "Finished: " .. nombreBoton,
+                  Duration = 3,
+                  Image = 4483362458,
+               })
+            end
+         end)
+      end,
+   })
+end
+
+-- 1. Botón de Speed 0
+crearBotonComandoMasivo(
+   "Freeze All (;speed 0)",
+   "Pause Freeze",
+   "Resume Freeze",
+   function(nombre) return ";speed " .. nombre .. " 0" end
+)
+
+-- 2. Botón de Blur 9999
+crearBotonComandoMasivo(
+   "Blur All (;blur 9999)",
+   "Pause Blur",
+   "Resume Blur",
+   function(nombre) return ";blur " .. nombre .. " 9999" end
+)
+
+-- 3. Botón de Bring
+crearBotonComandoMasivo(
+   "Bring All (;bring)",
+   "Pause Bring",
+   "Resume Bring",
+   function(nombre) return ";bring " .. nombre end
+)
+
+
+
+
+
+-- ==========================================
+-- SECTION 3: BOMB PLAYER
+-- ==========================================
+local BombSection = Tab:CreateSection("Bomb Player")
+
+local jugadorObjetivo = nil
+
+local function obtenerListaJugadores()
+   local lista = {"None"}
+   for _, player in ipairs(Players:GetPlayers()) do
+      if player ~= Players.LocalPlayer then
+         table.insert(lista, player.Name)
+      end
+   end
+   return lista
+end
+
+local PlayerDropdown = Tab:CreateDropdown({
+   Name = "Select Player",
+   Options = obtenerListaJugadores(),
+   CurrentOption = {"None"},
+   MultipleOptions = false,
+   Flag = "DropdownJugador",
+   Callback = function(Options)
+      local nombreSeleccionado = type(Options) == "table" and table.concat(Options) or tostring(Options)
+      if nombreSeleccionado == "" or nombreSeleccionado == "None" then
+         jugadorObjetivo = nil
+      else
+         jugadorObjetivo = Players:FindFirstChild(nombreSeleccionado)
+      end
+   end,
+})
+
+local BombButton = Tab:CreateButton({
+   Name = "Bomb Player (28s)",
+   Callback = function()
+      if not jugadorObjetivo then
+         Rayfield:Notify({
+            Title = "Error",
+            Content = "Select a valid player first.",
+            Duration = 3,
+            Image = 4483362458,
+         })
+         return
+      end
+
+      local localPlayer = Players.LocalPlayer
+      local character = localPlayer.Character
+      local hrp = character and character:FindFirstChild("HumanoidRootPart")
+      if not hrp then return end
+
+      local remote = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("mapManagerRemote")
+      local objetivoActual = jugadorObjetivo
+
+      local bombTool = localPlayer.Backpack:FindFirstChild("Classic Timebomb") or character:FindFirstChild("Classic Timebomb")
+      if not bombTool then
+         remote:FireServer("claimTool", "Classic Timebomb")
+         bombTool = localPlayer.Backpack:WaitForChild("Classic Timebomb", 3)
+      end
+
+      if not bombTool then
+         Rayfield:Notify({
+            Title = "Cooldown",
+            Content = "Could not claim Classic Timebomb (server cooldown).",
+            Duration = 3,
+            Image = 4483362458,
+         })
+         return
+      end
+
+      bombTool.Parent = character
+      Rayfield:Notify({
+         Title = "Bomb Claimed",
+         Content = "Waiting 28s before dropping it on " .. objetivoActual.Name .. "...",
+         Duration = 4,
+         Image = 4483362458,
+      })
+
+      task.wait(28)
+
+      character = localPlayer.Character
+      hrp = character and character:FindFirstChild("HumanoidRootPart")
+      if not hrp or not objetivoActual or not objetivoActual.Parent or not objetivoActual.Character or not objetivoActual.Character:FindFirstChild("HumanoidRootPart") then
+         Rayfield:Notify({
+            Title = "Error",
+            Content = "Target or you died before the 28s finished.",
+            Duration = 3,
+            Image = 4483362458,
+         })
+         return
+      end
+
+      local posOriginal = hrp.CFrame
+
+      if bombTool and bombTool.Parent ~= character then
+         bombTool.Parent = character
+      end
+
+      hrp.CFrame = objetivoActual.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
+      task.wait(0.1)
+      
+      if bombTool then
+         bombTool:Activate()
+      end
+      
+      task.wait(0.2)
+      hrp.CFrame = posOriginal
+   end,
+})
+
+Players.PlayerAdded:Connect(function()
+   PlayerDropdown:Refresh(obtenerListaJugadores())
+end)
+
+Players.PlayerRemoving:Connect(function()
+   PlayerDropdown:Refresh(obtenerListaJugadores())
+end)
+
+-- ==========================================
+-- COLOR NARANJA EN "ORANGE"
+-- ==========================================
+task.spawn(function()
+   for _ = 1, 30 do
+      for _, gui in ipairs({CoreGui, Players.LocalPlayer:FindFirstChild("PlayerGui")}) do
+         if gui then
+            for _, obj in ipairs(gui:GetDescendants()) do
+               if obj:IsA("TextLabel") and obj.Text == "Gear slap tower Script by ORANGE" then
+                  obj.RichText = true
+                  obj.Text = 'Gear slap tower Script by <font color="rgb(255, 145, 0)"><b>ORANGE</b></font>'
+                  return
+               end
+            end
+         end
+      end
+      task.wait(0.2)
+   end
+end)
